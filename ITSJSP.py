@@ -6,7 +6,7 @@ if os.path.exists("results-JSSP"):
     pass
 else:
     os.mkdir("results-JSSP")
-results = open("results-JSSP" + os.sep + "results-JSSP-LA01(Levy)-convergence-3000.csv", "a+")
+results = open("results-JSSP" + os.sep + "results-JSSP-LA01bak-testconvergence-3000.csv", "a+")
 results_writer = csv.writer(results, lineterminator="\n")
 
 # process time and machines data
@@ -37,19 +37,95 @@ machine_assignments = [
     [5, 4, 3, 2, 1]
 ]
 
-# Adjust machine indexing to be 0-based (machine numbering starts at 0 instead of 1)--
+# Adjust machine indexing to be 0-based
 job_data = [
     [(machine_assignments[job][i] - 1, processing_times[job][i]) for i in range(num_machines)]
     for job in range(num_jobs)
 ]
 
-tabu_tenure = 50
+tabu_tenure = 15
 max_iterations = 3000
 tabu_list = []
 aspiration_criteria = 666
 
 
-#  Initilization
+# Calculate total processing time for each job
+def get_job_total_time(job_idx):
+    return sum([processing_times[job_idx][i] for i in range(num_machines)])
+
+
+# Improved initialization with insertion heuristic
+def init_solution_improved():
+    # Calculate total processing time for each job
+    job_times = [(job_idx, get_job_total_time(job_idx)) for job_idx in range(num_jobs)]
+    # Sort jobs by descending total processing time
+    job_times.sort(key=lambda x: x[1], reverse=True)
+
+    solution = []
+    scheduled_jobs = set()
+
+    # Schedule the longest job first
+    longest_job = job_times[0][0]
+    # Get operations sorted by descending processing time
+    ops = [(i, job_data[longest_job][i][1]) for i in range(num_machines)]
+    ops.sort(key=lambda x: x[1], reverse=True)
+
+    for op_idx, _ in ops:
+        solution.append(longest_job)
+
+    scheduled_jobs.add(longest_job)
+
+    # Schedule remaining jobs
+    for job_idx, _ in job_times[1:]:
+        # Get operations for this job sorted by descending processing time
+        ops = [(i, job_data[job_idx][i][1]) for i in range(num_machines)]
+        ops.sort(key=lambda x: x[1], reverse=True)
+
+        for op_idx, proc_time in ops:
+            machine, _ = job_data[job_idx][op_idx]
+
+            # Try all feasible insertion positions
+            best_position = len(solution)
+            best_makespan = float('inf')
+
+            for insert_pos in range(len(solution) + 1):
+                # Create candidate solution
+                candidate = solution.copy()
+                candidate.insert(insert_pos, job_idx)
+
+                # Check if insertion is feasible (maintains operation order for this job)
+                if is_feasible_insertion(candidate, job_idx):
+                    # Evaluate makespan
+                    schedule = decode_schedule(candidate)
+                    makespan = calculate_makespan(schedule)
+
+                    if makespan < best_makespan:
+                        best_makespan = makespan
+                        best_position = insert_pos
+
+            # Insert at best position
+            solution.insert(best_position, job_idx)
+
+        scheduled_jobs.add(job_idx)
+
+    return solution
+
+
+# Check if a solution maintains the correct operation order for each job
+def is_feasible_insertion(solution, job_idx):
+    job_count = [0] * num_jobs
+
+    for job in solution:
+        if job == job_idx:
+            job_count[job] += 1
+            # Check if operations appear in order (no more than num_machines operations)
+            if job_count[job] > num_machines:
+                return False
+
+    return True
+
+
+# Original random initialization (for comparison)
 def init_solution():
     solution = []
     for job_idx in range(num_jobs):
@@ -58,42 +134,31 @@ def init_solution():
     return solution
 
 
-#decode function
+# Decode function
 def decode_schedule(solution):
-    #  Track the current operation index for each job
     job_operation_count = [0] * num_jobs
-    # Track the available time for each machine
     machine_available_time = [0] * num_machines
-    # Track the completion time for each job
     job_completion_time = [0] * num_jobs
 
-    operation_schedule = []  #  Store completion times for all operations
+    operation_schedule = []
 
     for job in solution:
-        #  Get the next operation for the current job
         op_idx = job_operation_count[job]
         if op_idx >= num_machines:
-            continue  # All operations for this job have been scheduled
+            continue
 
-
-        #  Get the machine and processing time for the operation
         machine, processing_time = job_data[job][op_idx]
 
-        # Calculate the start time and completion time for the operation
         start_time = max(machine_available_time[machine], job_completion_time[job])
         completion_time = start_time + processing_time
 
-        # Update the machine available time and job completion time
         machine_available_time[machine] = completion_time
         job_completion_time[job] = completion_time
 
-        # Increment operation count
         job_operation_count[job] += 1
 
-        # Store operation information
         operation_schedule.append((job, op_idx, machine, start_time, completion_time))
 
-    #Return the completion times for all operations
     return [op[4] for op in operation_schedule]
 
 
@@ -134,16 +199,14 @@ def levy_perturbation(solution):
     return neighbor
 
 
-# returns more detailed scheduling information
 def decode_disjunctive_graph(solution):
     job_ops = [0] * num_jobs
     machine_time = [0] * num_machines
     job_time = [0] * num_jobs
-    op_schedules = []  # [(job, op_idx, machine, start, finish)]
+    op_schedules = []
 
     machine_queues = [[] for _ in range(num_machines)]
 
-    # Create a valid operation list (avoid duplicate operations)
     valid_operations = []
     job_counts = [0] * num_jobs
 
@@ -169,11 +232,9 @@ def decode_disjunctive_graph(solution):
     return op_schedules, machine_queues
 
 
-# Find operations (job, op_idx) on the critical path
 def get_critical_path(solution):
     op_schedules, machine_queues = decode_disjunctive_graph(solution)
 
-    # Build directed graph G: each operation is a node, edges are dependencies
     graph = {}
     start_time = {}
     finish_time = {}
@@ -184,7 +245,6 @@ def get_critical_path(solution):
         start_time[node] = st
         finish_time[node] = ft
 
-    # Add sequence edges (within the same job)
     for job in range(num_jobs):
         for op in range(num_machines - 1):
             u = (job, op)
@@ -192,7 +252,6 @@ def get_critical_path(solution):
             if u in graph and v in graph:
                 graph[u].append(v)
 
-    #  Add non-overlapping edges on machines
     for machine in range(num_machines):
         queue = sorted(machine_queues[machine], key=lambda x: start_time.get((x[0], x[1]), 0))
         for i in range(len(queue) - 1):
@@ -201,16 +260,14 @@ def get_critical_path(solution):
             if u in graph and v in graph:
                 graph[u].append(v)
 
-    #  Backtrack the longest path (dynamic programming)
     longest_path = {}
     pred = {}
 
-    #  Ensure all nodes have valid completion times
     valid_nodes = [node for node in graph if node in finish_time]
     sorted_nodes = sorted(valid_nodes, key=lambda x: finish_time.get(x, 0))
 
     for node in sorted_nodes:
-        longest_path[node] = finish_time[node] - start_time[node]  # Initialize as the processing time for operating itself
+        longest_path[node] = finish_time[node] - start_time[node]
         for prev in graph:
             if node in graph[prev] and prev in longest_path:
                 alt = longest_path[prev] + (finish_time[node] - start_time[node])
@@ -218,13 +275,11 @@ def get_critical_path(solution):
                     longest_path[node] = alt
                     pred[node] = prev
 
-    #  Find the node with the latest finish time
     if not longest_path:
         return []
 
     end_node = max(longest_path.items(), key=lambda x: finish_time.get(x[0], 0) + x[1])[0]
 
-    # Backtrack to find critical path nodes
     path = []
     current = end_node
     while current in pred:
@@ -239,7 +294,6 @@ def generate_n5_neighbors(solution):
     neighbors = []
     critical_path = get_critical_path(solution)
 
-    #  Map (job, op_idx) back to index positions in the solution
     def op_position(job, op_idx):
         count = 0
         for i, val in enumerate(solution):
@@ -249,12 +303,10 @@ def generate_n5_neighbors(solution):
                 count += 1
         return -1
 
-    # Generate swaps for adjacent operations on the critical path
     for i in range(len(critical_path) - 1):
         job1, op1 = critical_path[i]
         job2, op2 = critical_path[i + 1]
 
-        # Only swap when the two operations are in different jobs
         if job1 != job2:
             idx1 = op_position(job1, op1)
             idx2 = op_position(job2, op2)
@@ -263,7 +315,6 @@ def generate_n5_neighbors(solution):
                 neighbor[idx1], neighbor[idx2] = neighbor[idx2], neighbor[idx1]
                 neighbors.append(neighbor)
 
-    # If no neighbors are found, generate some random neighbors
     if not neighbors:
         for _ in range(5):
             neighbor = solution.copy()
@@ -276,8 +327,13 @@ def generate_n5_neighbors(solution):
     return neighbors
 
 
-def tabu_search():
-    best_solution = init_solution()
+def tabu_search(use_improved_init=True):
+    # Use improved initialization
+    if use_improved_init:
+        best_solution = init_solution_improved()
+    else:
+        best_solution = init_solution()
+
     current_solution = best_solution.copy()
 
     schedule = decode_schedule(best_solution)
@@ -286,7 +342,7 @@ def tabu_search():
     fitness_progress = []
 
     no_improve_count = 0
-    max_no_improve = 50  # The upper limit of the number of times the fitness value has not been improved continuously
+    max_no_improve = 50
 
     for iteration in range(max_iterations):
         neighbors = generate_n5_neighbors(current_solution)
@@ -301,7 +357,6 @@ def tabu_search():
             schedule = decode_schedule(neighbor)
             makespan = calculate_makespan(schedule)
 
-            # If the neighbor solution is not taboo, or meets the amnesty criteria
             if not is_tabu(neighbor) or makespan < best_makespan:
                 if makespan < best_neighbor_makespan:
                     best_neighbor = neighbor
@@ -321,29 +376,29 @@ def tabu_search():
         else:
             no_improve_count += 1
 
-        # Using the  Levy Flight  to jump the local
         if no_improve_count >= max_no_improve:
             current_solution = levy_perturbation(current_solution)
             no_improve_count = 0
 
         fitness_progress.append(best_makespan)
 
-        # Print current progress
         if iteration % 100 == 0:
             print(f"Iteration {iteration}, Current Best: {best_makespan}")
-
 
     return best_solution, best_makespan, fitness_progress
 
 
-# run the main project
+# Run the main project
+
 for z in range(30):
-    print(f"Run {z + 1}/30")
-    best_solution, best_makespan, fitness_progress = tabu_search()
 
-    print("best_solution：", best_solution)
-    print("Makespan：", best_makespan)
+    best_solution, best_makespan, fitness_progress = tabu_search(use_improved_init=True)
 
+    print("best_solution:", best_solution)
+    print("Makespan:", best_makespan)
 
+    # Write results
+    results_writer.writerow([z + 1, best_makespan])
 
 results.close()
+print("\nAll runs completed!")
