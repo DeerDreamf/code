@@ -6,35 +6,35 @@ if os.path.exists("results-JSSP"):
     pass
 else:
     os.mkdir("results-JSSP")
-results = open("results-JSSP" + os.sep + "results-JSSP-LA01bak-testconvergence-3000.csv", "a+")
+results = open("results-JSSP" + os.sep + "results-JSSP-LA02bak-testconvergence-3000.csv", "a+")
 results_writer = csv.writer(results, lineterminator="\n")
 
 # process time and machines data
 num_jobs = 10
 num_machines = 5
 processing_times = [
-    [53, 21, 34, 55, 95],
-    [21, 71, 26, 52, 16],
-    [12, 42, 31, 39, 98],
-    [55, 77, 66, 77, 79],
-    [83, 19, 64, 34, 37],
-    [92, 54, 43, 62, 79],
-    [93, 87, 87, 69, 77],
-    [60, 41, 38, 24, 83],
-    [44, 49, 98, 17, 25],
-    [96, 75, 43, 79, 77]
+    [20, 31, 17, 87, 76],
+    [24, 18, 32, 81, 25],
+    [58, 72, 23, 99, 28],
+    [45, 76, 86, 90, 97],
+    [42, 46, 17, 48, 27],
+    [98, 67, 62, 27, 48],
+    [80, 12, 50, 19, 28],
+    [94, 63, 98, 50, 80],
+    [75, 41, 50, 55, 14],
+    [61, 37, 18, 79, 72]
 ]
 machine_assignments = [
-    [2, 1, 5, 4, 3],
-    [1, 4, 5, 3, 2],
-    [4, 5, 2, 3, 1],
-    [2, 1, 5, 3, 4],
-    [1, 4, 3, 2, 5],
+    [1, 4, 2, 5, 3],
+    [5, 3, 1, 2, 4],
     [2, 3, 5, 1, 4],
-    [4, 5, 2, 3, 1],
-    [3, 1, 2, 4, 5],
-    [4, 2, 5, 1, 3],
-    [5, 4, 3, 2, 1]
+    [3, 2, 5, 1, 4],
+    [5, 1, 4, 3, 2],
+    [2, 1, 5, 4, 3],
+    [5, 2, 4, 1, 3],
+    [2, 1, 3, 4, 5],
+    [5, 1, 3, 2, 4],
+    [5, 3, 2, 4, 1]
 ]
 
 # Adjust machine indexing to be 0-based
@@ -46,7 +46,7 @@ job_data = [
 tabu_tenure = 15
 max_iterations = 3000
 tabu_list = []
-aspiration_criteria = 666
+
 
 
 # Calculate total processing time for each job
@@ -123,15 +123,6 @@ def is_feasible_insertion(solution, job_idx):
                 return False
 
     return True
-
-
-# Original random initialization (for comparison)
-def init_solution():
-    solution = []
-    for job_idx in range(num_jobs):
-        solution += [job_idx] * num_machines
-    random.shuffle(solution)
-    return solution
 
 
 # Decode function
@@ -331,8 +322,6 @@ def tabu_search(use_improved_init=True):
     # Use improved initialization
     if use_improved_init:
         best_solution = init_solution_improved()
-    else:
-        best_solution = init_solution()
 
     current_solution = best_solution.copy()
 
@@ -342,7 +331,7 @@ def tabu_search(use_improved_init=True):
     fitness_progress = []
 
     no_improve_count = 0
-    max_no_improve = 50
+    max_no_improve = 100
 
     for iteration in range(max_iterations):
         neighbors = generate_n5_neighbors(current_solution)
